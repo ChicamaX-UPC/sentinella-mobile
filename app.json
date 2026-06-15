@@ -1,25 +1,67 @@
 {
   "expo": {
-    "name": "sentinella-mobile",
+    "name": "Sentinella Campo",
     "slug": "sentinella-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "sentinella",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chicamax.sentinella.campo",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Sentinella captura fotos de hallazgos en ronda.",
+        "NSLocationWhenInUseUsageDescription": "Sentinella registra la ubicación de inspecciones."
+      }
     },
     "android": {
+      "package": "com.chicamax.sentinella.campo",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0f172a",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ff8c42",
+          "defaultChannel": "alerts"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Sentinella necesita tu ubicación para registrar hallazgos en ronda."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Sentinella captura fotos de inspección en borrador local."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a8f3c1e2-4b5d-6e7f-8091-a2b3c4d5e6f7"
+      }
+    },
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
