@@ -1,39 +1,39 @@
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 import { ApiError, apiJson } from "@/api/client";
 import type { Round } from "@/api/types";
+import { AppScrollView } from "@/components/AppScrollView";
+import { DetailPanel, DetailRow, formatShortId, formatWhen } from "@/components/DetailFields";
 import { markSyncedNow, MobileShell } from "@/components/MobileShell";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { RoundChecklistItemCard } from "@/components/RoundChecklistItemCard";
+import { SectionHeader } from "@/components/ui";
+import { useTailingDamLabels } from "@/hooks/useTailingDamLabels";
 import { useOnline } from "@/hooks/useOnline";
 import { labelRoundStatus } from "@/labels/spanish";
+import { roundChecklistProgress } from "@/lib/roundProgress";
 import {
   enqueueMutation,
+  flushRoundOutbox,
   loadRoundSnapshot,
+  resolveRound,
   saveRoundSnapshot,
 } from "@/offline/outbox";
-import { colors, radii, spacing } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { spacing } from "@/theme/tokens";
 
 function checklistProgress(round: Round) {
-  const items = round.checklistItems ?? [];
-  const total = items.length;
-  const done = items.filter((it) => Boolean(it.completedAt)).length;
-  const requiredPending = items.filter(
-    (it) => it.required !== false && !it.completedAt,
-  ).length;
-  return { total, done, requiredPending };
+  return roundChecklistProgress(round);
 }
 
 export default function RoundDetailScreen() {
   const { roundId } = useLocalSearchParams<{ roundId: string }>();
   const online = useOnline();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { getTailingDamLabel } = useTailingDamLabels();
   const [round, setRound] = useState<Round | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -48,43 +48,61 @@ export default function RoundDetailScreen() {
     if (!roundId) return;
     setError(null);
     setFromCache(false);
-    apiJson<Round>(`rounds/${roundId}`)
-      .then((r) => {
+    void resolveRound(roundId).then(async (r) => {
+      if (r) {
         setRound(r);
-        void saveRoundSnapshot(roundId, JSON.stringify(r));
-      })
-      .catch(async (e: unknown) => {
-        const snap = await loadRoundSnapshot(roundId);
-        if (snap) {
-          try {
-            setRound(JSON.parse(snap) as Round);
-            setFromCache(true);
-            setError(null);
-          } catch {
-            setError(e instanceof ApiError ? `Error ${e.status}` : "Error al cargar");
-          }
-        } else {
-          setError(e instanceof ApiError ? `Error ${e.status}` : "Error al cargar");
+        return;
+      }
+      const snap = await loadRoundSnapshot(roundId);
+      if (snap) {
+        try {
+          setRound(JSON.parse(snap) as Round);
+          setFromCache(true);
+        } catch {
+          setError("Error al cargar la ronda");
         }
-      });
+      } else {
+        setError("Error al cargar la ronda");
+      }
+    });
   }
 
-  useEffect(() => {
-    load();
-  }, [roundId]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [roundId]),
+  );
 
   async function syncRound() {
     if (!roundId || !round) return;
-    if (progress && progress.requiredPending > 0) {
-      setError(
-        `Faltan ${progress.requiredPending} ítem(s) obligatorio(s) por completar antes de sincronizar.`,
-      );
+
+    const status = (round.status ?? "").toUpperCase();
+    if (round.syncedAt || status === "SYNCED") {
+      setError("Esta ronda ya está sincronizada.");
       return;
     }
 
     setSyncBusy(true);
     setError(null);
     try {
+      if (online) {
+        await flushRoundOutbox(roundId, true);
+        const refreshed = await resolveRound(roundId);
+        if (refreshed) setRound(refreshed);
+        const prog = refreshed ? checklistProgress(refreshed) : progress;
+        if (prog && prog.requiredPending > 0) {
+          setError(
+            `Faltan ${prog.requiredPending} ítem(s) obligatorio(s). Envía los ítems pendientes antes de sincronizar.`,
+          );
+          return;
+        }
+      } else if (progress && progress.requiredPending > 0) {
+        setError(
+          `Faltan ${progress.requiredPending} ítem(s) obligatorio(s) por completar antes de sincronizar.`,
+        );
+        return;
+      }
+
       if (!online) {
         await enqueueMutation({
           method: "POST",
@@ -95,6 +113,7 @@ export default function RoundDetailScreen() {
         setError("Sin red: sincronización en cola");
         return;
       }
+
       const updated = await apiJson<Round>(`rounds/${roundId}/sync`, {
         method: "POST",
         body: JSON.stringify({}),
@@ -119,9 +138,12 @@ export default function RoundDetailScreen() {
     }
   }
 
+  const alreadySynced =
+    Boolean(round?.syncedAt) || (round?.status ?? "").toUpperCase() === "SYNCED";
+
   return (
     <MobileShell title="Ronda" showBack>
-      <ScrollView contentContainerStyle={styles.content}>
+      <AppScrollView contentContainerStyle={styles.content} trackCollapse={false}>
         {fromCache ? (
           <Text style={styles.cache}>Checklist desde caché local</Text>
         ) : null}
@@ -129,7 +151,18 @@ export default function RoundDetailScreen() {
 
         {round ? (
           <>
-            <Text style={styles.status}>Estado: {labelRoundStatus(round.status)}</Text>
+            <DetailPanel>
+              <DetailRow label="ID" value={formatShortId(round.id)} mono />
+              <DetailRow label="Tranque" value={getTailingDamLabel(round.tailingDamId)} />
+              <DetailRow label="Estado" value={labelRoundStatus(round.status)} />
+              <DetailRow label="Programada" value={formatWhen(round.scheduledAt)} />
+              <DetailRow label="Inicio" value={formatWhen(round.startedAt)} />
+              <DetailRow label="Sincronizada" value={formatWhen(round.syncedAt)} />
+              {round.offlineCreated ? (
+                <DetailRow label="Origen" value="Creada offline" />
+              ) : null}
+            </DetailPanel>
+
             {progress && progress.total > 0 ? (
               <View style={styles.progressBox}>
                 <Text style={styles.progressText}>
@@ -144,62 +177,45 @@ export default function RoundDetailScreen() {
                 )}
               </View>
             ) : null}
+
             <PrimaryButton
-              title={syncBusy ? "Sincronizando…" : "Sincronizar ronda"}
+              title={
+                alreadySynced
+                  ? "Ronda sincronizada"
+                  : syncBusy
+                    ? "Sincronizando…"
+                    : "Sincronizar ronda"
+              }
               variant="secondary"
               loading={syncBusy}
+              disabled={alreadySynced}
               onPress={() => void syncRound()}
             />
+
+            <SectionHeader title="Checklist" />
             {(round.checklistItems ?? []).map((it) => (
-              <View key={it.id} style={styles.card}>
-                <Text style={styles.point}>
-                  {it.pointName}
-                  {it.required !== false ? " *" : ""}
-                </Text>
-                {it.completedAt ? (
-                  <Text style={styles.done}>Listo</Text>
-                ) : (
-                  <Pressable
-                    onPress={() =>
-                      router.push(`/(main)/rounds/${roundId}/item/${it.id}`)
-                    }
-                  >
-                    <Text style={styles.link}>Completar ítem →</Text>
-                  </Pressable>
-                )}
-              </View>
+              <RoundChecklistItemCard key={it.id} roundId={roundId!} item={it} />
             ))}
           </>
         ) : null}
-      </ScrollView>
+      </AppScrollView>
     </MobileShell>
   );
 }
 
-const styles = StyleSheet.create({
-  content: { gap: spacing.md, paddingBottom: spacing.xl },
-  cache: { color: colors.warning, fontSize: 12 },
-  error: { color: colors.warning, fontSize: 14 },
-  status: { color: colors.muted, fontSize: 15 },
-  progressBox: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.sm,
-    gap: 4,
-  },
-  progressText: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  progressWarn: { color: colors.warning, fontSize: 13 },
-  progressOk: { color: colors.success, fontSize: 13 },
-  card: {
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-  },
-  point: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  done: { color: colors.success, fontSize: 12, marginTop: spacing.sm },
-  link: { color: colors.accent, marginTop: spacing.sm, fontWeight: "600" },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    content: { gap: spacing.md, paddingBottom: spacing.xl },
+    cache: { color: colors.warning, fontSize: 12 },
+    error: { color: colors.warning, fontSize: 14 },
+    progressBox: {
+      paddingVertical: spacing.sm,
+      gap: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    progressText: { color: colors.text, fontSize: 15, fontWeight: "600" },
+    progressWarn: { color: colors.warning, fontSize: 13 },
+    progressOk: { color: colors.success, fontSize: 13 },
+  });
+}

@@ -1,8 +1,7 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,13 +9,16 @@ import {
 } from "react-native";
 
 import { ApiError, apiJson } from "@/api/client";
+import type { Round } from "@/api/types";
 import { useSession } from "@/auth/SessionContext";
+import { AppScrollView } from "@/components/AppScrollView";
 import { MobileShell } from "@/components/MobileShell";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { useOnline } from "@/hooks/useOnline";
 import { useTailingDamLabels } from "@/hooks/useTailingDamLabels";
-import { enqueueMutation } from "@/offline/outbox";
-import { colors, radii, spacing } from "@/theme/colors";
+import { enqueueMutation, persistRoundFromApi } from "@/offline/outbox";
+import { useTheme } from "@/theme/ThemeContext";
+import { radii, spacing } from "@/theme/tokens";
 
 function toLocalInputValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -26,6 +28,8 @@ function toLocalInputValue(date: Date) {
 export default function RoundStartScreen() {
   const { user } = useSession();
   const online = useOnline();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { options } = useTailingDamLabels();
   const [tailingDamId, setTailingDamId] = useState("");
   const [scheduledAt, setScheduledAt] = useState(toLocalInputValue(new Date()));
@@ -66,11 +70,12 @@ export default function RoundStartScreen() {
         return;
       }
 
-      const created = await apiJson<{ id: string }>("rounds", {
+      const created = await apiJson<Round>("rounds", {
         method: "POST",
         body,
       });
-      router.replace(`/(main)/rounds/${created.id}`);
+      await persistRoundFromApi(created.id, created);
+      router.replace("/(main)/rounds");
     } catch (err: unknown) {
       if (!online) {
         await enqueueMutation({
@@ -92,7 +97,7 @@ export default function RoundStartScreen() {
 
   return (
     <MobileShell title="Iniciar ronda" showBack>
-      <ScrollView contentContainerStyle={styles.content}>
+      <AppScrollView contentContainerStyle={styles.content}>
         <Text style={styles.hint}>
           Ronda de inspección en tranque asignado. Sin red, se encola en Perfil → Sync.
         </Text>
@@ -140,45 +145,39 @@ export default function RoundStartScreen() {
             onPress={() => void onSubmit()}
           />
         </View>
-      </ScrollView>
+      </AppScrollView>
     </MobileShell>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
   content: { gap: spacing.md, paddingBottom: spacing.xl },
   hint: { color: colors.muted, fontSize: 13 },
   error: { color: colors.warning, fontSize: 14 },
   card: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.md,
     gap: spacing.sm,
+    marginTop: spacing.sm,
   },
-  label: { color: colors.muted, fontSize: 12, marginTop: spacing.sm },
+  label: { color: colors.muted, fontSize: 13, marginTop: spacing.sm },
   option: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    padding: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm + 2,
     minHeight: 44,
     justifyContent: "center",
   },
   optionActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
+    borderBottomColor: colors.text,
   },
   optionText: { color: colors.muted, fontSize: 15 },
-  optionTextActive: { color: colors.text, fontWeight: "600" },
+  optionTextActive: { color: colors.text, fontWeight: "500" },
   input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    backgroundColor: colors.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
     color: colors.text,
-    padding: spacing.sm,
-    fontSize: 14,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
   },
-});
+  });
+}

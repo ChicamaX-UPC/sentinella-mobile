@@ -10,7 +10,16 @@ export type PhotoDraftMeta = {
   createdAt: number;
 };
 
+export type GeoDraftMeta = {
+  roundId: string;
+  itemId: string;
+  latitude: number;
+  longitude: number;
+  createdAt: number;
+};
+
 const PHOTOS_KEY = "sentinella_photo_drafts";
+const GEO_KEY = "sentinella_geo_drafts";
 const PHOTO_DIR = `${FileSystem.documentDirectory ?? ""}sentinella-photos/`;
 
 async function ensureDir() {
@@ -80,6 +89,58 @@ export async function deletePhotoDraftsForItem(
     await FileSystem.deleteAsync(row.uri, { idempotent: true });
   }
   await writeDrafts(
+    rows.filter((r) => !(r.roundId === roundId && r.itemId === itemId)),
+  );
+}
+
+async function readGeoDrafts(): Promise<GeoDraftMeta[]> {
+  const raw = await AsyncStorage.getItem(GEO_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as GeoDraftMeta[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeGeoDrafts(rows: GeoDraftMeta[]): Promise<void> {
+  await AsyncStorage.setItem(GEO_KEY, JSON.stringify(rows));
+}
+
+export async function saveGeoDraft(
+  roundId: string,
+  itemId: string,
+  latitude: number,
+  longitude: number,
+): Promise<void> {
+  const rows = await readGeoDrafts();
+  const filtered = rows.filter(
+    (r) => !(r.roundId === roundId && r.itemId === itemId),
+  );
+  filtered.push({
+    roundId,
+    itemId,
+    latitude,
+    longitude,
+    createdAt: Date.now(),
+  });
+  await writeGeoDrafts(filtered);
+}
+
+export async function getGeoDraft(
+  roundId: string,
+  itemId: string,
+): Promise<GeoDraftMeta | null> {
+  const rows = await readGeoDrafts();
+  return rows.find((r) => r.roundId === roundId && r.itemId === itemId) ?? null;
+}
+
+export async function deleteGeoDraftForItem(
+  roundId: string,
+  itemId: string,
+): Promise<void> {
+  const rows = await readGeoDrafts();
+  await writeGeoDrafts(
     rows.filter((r) => !(r.roundId === roundId && r.itemId === itemId)),
   );
 }
