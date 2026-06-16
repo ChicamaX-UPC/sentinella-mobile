@@ -1,15 +1,16 @@
-import { ScrollView, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 
+import { AppScrollView } from "@/components/AppScrollView";
 import { MobileShell } from "@/components/MobileShell";
 import { SyncPanel } from "@/components/SyncPanel";
-import { spacing } from "@/theme/colors";
+import { spacing } from "@/theme/tokens";
 
 export default function SyncScreen() {
   return (
     <MobileShell title="Sincronización">
-      <ScrollView contentContainerStyle={styles.content}>
+      <AppScrollView contentContainerStyle={styles.content}>
         <SyncPanel />
-      </ScrollView>
+      </AppScrollView>
     </MobileShell>
   );
 }

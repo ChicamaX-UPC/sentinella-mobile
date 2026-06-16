@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { useOnline } from "@/hooks/useOnline";
 import { countPhotoDrafts } from "@/offline/photos";
 import { countPendingOutbox, flushMutationOutbox } from "@/offline/outbox";
-import { colors, radii, spacing } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { spacing } from "@/theme/tokens";
 
 type Props = {
   title?: string;
 };
 
-export function SyncPanel({ title = "Sincronización offline" }: Props) {
+export function SyncPanel({ title = "Sincronización" }: Props) {
   const online = useOnline();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [outbox, setOutbox] = useState(0);
   const [photos, setPhotos] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -41,10 +44,7 @@ export function SyncPanel({ title = "Sincronización offline" }: Props) {
     <View style={styles.box}>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.line}>
-        Cola API: <Text style={styles.accent}>{outbox}</Text>
-      </Text>
-      <Text style={styles.line}>
-        Fotos en borrador: <Text style={styles.accent}>{photos}</Text>
+        Cola API: {outbox} · Fotos: {photos}
       </Text>
       <PrimaryButton
         title={busy ? "Sincronizando…" : "Reintentar cola"}
@@ -53,24 +53,23 @@ export function SyncPanel({ title = "Sincronización offline" }: Props) {
         disabled={!online}
         onPress={() => void flush()}
       />
-      {!online ? (
-        <Text style={styles.offline}>Conéctate para procesar la cola.</Text>
-      ) : null}
+      {!online ? <Text style={styles.offline}>Sin conexión.</Text> : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  box: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  title: { color: colors.text, fontWeight: "600", fontSize: 16 },
-  line: { color: colors.muted, fontSize: 14 },
-  accent: { color: colors.accent, fontWeight: "700" },
-  offline: { color: colors.warning, fontSize: 13 },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    box: {
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginVertical: spacing.sm,
+    },
+    title: { color: colors.muted, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+    line: { color: colors.text, fontSize: 15 },
+    offline: { color: colors.warning, fontSize: 13 },
+  });
+}
