@@ -2,10 +2,12 @@ import { Redirect } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 
 import { useSession } from "@/auth/SessionContext";
-import { colors } from "@/theme/colors";
+import { canUseMobileApp } from "@/auth/roles";
+import { useTheme } from "@/theme/ThemeContext";
 
 export default function Index() {
   const { user, loading } = useSession();
+  const { colors } = useTheme();
 
   if (loading) {
     return (
@@ -23,7 +25,7 @@ export default function Index() {
   }
 
   if (user) {
-    return <Redirect href="/(main)" />;
+    return <Redirect href={canUseMobileApp(user.role) ? "/(main)" : "/unauthorized"} />;
   }
 
   return <Redirect href="/login" />;

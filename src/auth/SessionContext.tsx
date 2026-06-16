@@ -16,6 +16,7 @@ import {
   refreshRequest,
 } from "../api/client";
 import type { AuthSession, SessionUser } from "../api/types";
+import { API_BASE_URL } from "../config/api";
 import {
   clearSession,
   loadStoredSession,
@@ -101,7 +102,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (e instanceof ApiError) {
           throw new Error(e.body || "Credenciales inválidas");
         }
-        throw new Error("Error de red al iniciar sesión");
+        throw new Error(
+          `No se pudo conectar al backend (${API_BASE_URL}). Revisa WiFi y que Docker esté en marcha.`,
+        );
       }
     },
     [applySession],
