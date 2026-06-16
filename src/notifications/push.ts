@@ -1,6 +1,4 @@
 import Constants from "expo-constants";
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
 import { apiFetch } from "@/api/client";
@@ -8,22 +6,26 @@ import { playAlertFeedback } from "@/lib/alertFeedback";
 
 let registeredToken: string | null = null;
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+/** Push remoto no funciona en Expo Go desde SDK 53; solo en development build. */
+export function isPushAvailableInThisBuild(): boolean {
+  return Constants.appOwnership !== "expo";
+}
+
+async function notificationsModule() {
+  return import("expo-notifications");
+}
+
+async function deviceModule() {
+  return import("expo-device");
+}
 
 function resolveProjectId(): string | undefined {
   return Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
 }
 
 export async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== "android") return;
+  if (Platform.OS !== "android" || !isPushAvailableInThisBuild()) return;
+  const Notifications = await notificationsModule();
   await Notifications.setNotificationChannelAsync("alerts", {
     name: "Alertas Sentinella",
     importance: Notifications.AndroidImportance.MAX,
@@ -33,26 +35,38 @@ export async function ensureAndroidChannel(): Promise<void> {
   });
 }
 
+export async function configurePushHandler(): Promise<void> {
+  if (!isPushAvailableInThisBuild()) return;
+  const Notifications = await notificationsModule();
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
+
 export async function requestPushPermissions(): Promise<boolean> {
-  if (!Device.isDevice) {
-    return false;
-  }
+  if (!isPushAvailableInThisBuild()) return false;
+  const Device = await deviceModule();
+  if (!Device.isDevice) return false;
+  const Notifications = await notificationsModule();
   const current = await Notifications.getPermissionsAsync();
-  if (current.status === "granted") {
-    return true;
-  }
+  if (current.status === "granted") return true;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === "granted";
 }
 
 export async function obtainExpoPushToken(): Promise<string | null> {
-  if (!Device.isDevice) {
-    return null;
-  }
+  if (!isPushAvailableInThisBuild()) return null;
+  const Device = await deviceModule();
+  if (!Device.isDevice) return null;
   const projectId = resolveProjectId();
-  if (!projectId) {
-    return null;
-  }
+  if (!projectId) return null;
+  const Notifications = await notificationsModule();
   await ensureAndroidChannel();
   const token = await Notifications.getExpoPushTokenAsync({ projectId });
   return token.data;
@@ -83,8 +97,9 @@ export async function unregisterPushTokenFromBackend(): Promise<void> {
   }
 }
 
-/** Tras login o restaurar sesión. */
 export async function syncPushRegistration(): Promise<void> {
+  if (!isPushAvailableInThisBuild()) return;
+  await configurePushHandler();
   const granted = await requestPushPermissions();
   if (!granted) return;
   const token = await obtainExpoPushToken();
@@ -98,17 +113,28 @@ export async function syncPushRegistration(): Promise<void> {
 export function attachNotificationListeners(
   onOpenAlert: (alertId: string) => void,
 ): () => void {
-  const received = Notifications.addNotificationReceivedListener(() => {
-    void playAlertFeedback();
-  });
-  const response = Notifications.addNotificationResponseReceivedListener((event) => {
-    const alertId = event.notification.request.content.data?.alertId;
-    if (typeof alertId === "string" && alertId.length > 0) {
-      onOpenAlert(alertId);
-    }
-  });
+  if (!isPushAvailableInThisBuild()) {
+    return () => {};
+  }
+
+  let receivedSub: { remove: () => void } | null = null;
+  let responseSub: { remove: () => void } | null = null;
+
+  void (async () => {
+    const Notifications = await notificationsModule();
+    receivedSub = Notifications.addNotificationReceivedListener(() => {
+      void playAlertFeedback();
+    });
+    responseSub = Notifications.addNotificationResponseReceivedListener((event) => {
+      const alertId = event.notification.request.content.data?.alertId;
+      if (typeof alertId === "string" && alertId.length > 0) {
+        onOpenAlert(alertId);
+      }
+    });
+  })();
+
   return () => {
-    received.remove();
-    response.remove();
+    receivedSub?.remove();
+    responseSub?.remove();
   };
 }

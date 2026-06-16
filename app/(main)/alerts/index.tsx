@@ -1,22 +1,31 @@
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { ApiError, apiJson } from "@/api/client";
+import { apiJson } from "@/api/client";
 import type { AlertRow, PageResponse } from "@/api/types";
+import { AppScrollView } from "@/components/AppScrollView";
 import { MobileShell } from "@/components/MobileShell";
+import { ListGroup, StatusLabel } from "@/components/ui";
+import { useNodeLabels } from "@/hooks/useNodeLabels";
 import { playAlertFeedback } from "@/lib/alertFeedback";
-import { labelAlertSeverity, labelAlertStatus } from "@/labels/spanish";
+import { labelAlertSeverity, labelAlertStatus, labelSensorType } from "@/labels/spanish";
 import { loadAlertsCache, saveAlertsCache } from "@/offline/outbox";
-import { colors, radii, spacing } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { spacing } from "@/theme/tokens";
+
+function severityTone(severity: string | undefined): "danger" | "warning" | "accent" | "neutral" {
+  const s = (severity ?? "").toUpperCase();
+  if (s.includes("CRIT")) return "danger";
+  if (s.includes("HIGH") || s.includes("WARN")) return "warning";
+  if (s.includes("MED")) return "accent";
+  return "neutral";
+}
 
 export default function AlertsListScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { getNodeLabel } = useNodeLabels(true);
   const [rows, setRows] = useState<AlertRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -58,58 +67,63 @@ export default function AlertsListScreen() {
 
   return (
     <MobileShell title="Alertas">
-      <ScrollView contentContainerStyle={styles.content}>
-        {fromCache ? (
-          <Text style={styles.cache}>Mostrando última lista en caché local</Text>
-        ) : null}
+      <AppScrollView contentContainerStyle={styles.content}>
+        {fromCache ? <Text style={styles.cache}>Caché local</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {rows.map((a) => (
-          <View key={a.id} style={styles.card}>
-            <Text style={styles.severity}>{labelAlertSeverity(a.severity)}</Text>
-            <Text style={styles.status}>{labelAlertStatus(a.status)}</Text>
-            <Pressable
-              style={styles.linkBtn}
-              onPress={() => router.push(`/(main)/alerts/${a.id}`)}
-            >
-              <Text style={styles.linkText}>Abrir alerta</Text>
-            </Pressable>
-          </View>
-        ))}
-
-        {rows.length === 0 && !error ? (
+        {rows.length > 0 ? (
+          <ListGroup>
+            {rows.map((a, i) => (
+              <Pressable
+                key={a.id}
+                onPress={() => router.push(`/(main)/alerts/${a.id}`)}
+                style={({ pressed }) => [
+                  styles.row,
+                  i < rows.length - 1 && styles.rowBorder,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <View style={styles.rowMain}>
+                  <Text style={styles.rowTitle}>Alerta #{a.id.slice(0, 8)}</Text>
+                  <Text style={styles.sub}>
+                    {labelSensorType(a.sensorType)}: {String(a.triggeredValue ?? "—")}
+                    {a.nodeId ? ` · ${getNodeLabel(a.nodeId)}` : ""}
+                  </Text>
+                  <View style={styles.meta}>
+                    <StatusLabel label={labelAlertSeverity(a.severity)} tone={severityTone(a.severity)} />
+                    <Text style={styles.dot}>·</Text>
+                    <StatusLabel label={labelAlertStatus(a.status)} />
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </ListGroup>
+        ) : !error ? (
           <Text style={styles.muted}>Sin alertas.</Text>
         ) : null}
-      </ScrollView>
+      </AppScrollView>
     </MobileShell>
   );
 }
 
-const styles = StyleSheet.create({
-  content: { gap: spacing.md, paddingBottom: spacing.xl },
-  cache: { color: colors.warning, fontSize: 12 },
-  error: { color: colors.warning, fontSize: 14 },
-  muted: { color: colors.muted, fontSize: 14 },
-  card: {
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-  },
-  severity: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  status: { color: colors.muted, fontSize: 14, marginTop: 4 },
-  linkBtn: {
-    marginTop: spacing.md,
-    minHeight: 44,
-    borderRadius: radii.md,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  linkText: { color: "#fff", fontWeight: "600" },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    content: { gap: spacing.sm, paddingBottom: spacing.xl, paddingTop: spacing.sm },
+    cache: { color: colors.warning, fontSize: 12 },
+    error: { color: colors.danger, fontSize: 14 },
+    muted: { color: colors.muted, fontSize: 14 },
+    row: {
+      paddingVertical: spacing.md,
+      minHeight: 48,
+    },
+    rowBorder: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    rowMain: { gap: 4 },
+    rowTitle: { color: colors.text, fontSize: 16, fontWeight: "500" },
+    sub: { color: colors.muted, fontSize: 13 },
+    meta: { flexDirection: "row", alignItems: "center", gap: 6 },
+    dot: { color: colors.dim, fontSize: 12 },
+  });
+}

@@ -36,6 +36,16 @@ export type RelaveResource = {
   tailingDamId: string;
 };
 
+export type SensorReading = {
+  id: string;
+  nodeId: string;
+  timestamp?: string;
+  sensorType?: string;
+  value?: number | string;
+  unit?: string;
+  status?: string;
+};
+
 export type SensorNode = {
   id: string;
   name: string;
@@ -46,6 +56,7 @@ export type SensorNode = {
   lastSeen?: string;
   latitude?: number;
   longitude?: number;
+  position3d?: string;
 };
 
 export type AlertRow = {
@@ -62,6 +73,9 @@ export type AlertDetail = AlertRow & {
   ruleId?: string;
   acknowledgedBy?: string | null;
   acknowledgedAt?: string | null;
+  assignedTo?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
 };
 
 export type AuditRow = {

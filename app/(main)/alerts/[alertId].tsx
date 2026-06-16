@@ -1,51 +1,44 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ApiError, apiJson } from "@/api/client";
-import type {
-  AlertDetail,
-  AssignableUser,
-  AuditRow,
-} from "@/api/types";
-import { useSession } from "@/auth/SessionContext";
+import type { AlertDetail, AuditRow } from "@/api/types";
+import { AppScrollView } from "@/components/AppScrollView";
+import {
+  DetailPanel,
+  DetailRow,
+  formatShortId,
+  formatWhen,
+} from "@/components/DetailFields";
 import { markSyncedNow, MobileShell } from "@/components/MobileShell";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { SectionHeader, StatusLabel } from "@/components/ui";
 import { useNodeLabels } from "@/hooks/useNodeLabels";
 import { useOnline } from "@/hooks/useOnline";
 import {
   labelAlertSeverity,
   labelAlertStatus,
-  labelAssignableUser,
   labelAuditAction,
   labelSensorType,
 } from "@/labels/spanish";
+import { canOperatorAckAlert } from "@/lib/alerts";
 import { enqueueMutation } from "@/offline/outbox";
-import { colors, radii, spacing } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { spacing } from "@/theme/tokens";
 
 export default function AlertDetailScreen() {
   const { alertId } = useLocalSearchParams<{ alertId: string }>();
-  const { user } = useSession();
   const online = useOnline();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { getNodeLabel } = useNodeLabels(Boolean(alertId));
   const [alert, setAlert] = useState<AlertDetail | null>(null);
   const [audit, setAudit] = useState<AuditRow[]>([]);
-  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState("");
-  const [assignTo, setAssignTo] = useState("");
-
-  const role = user?.role;
-  const operatorOnly = role === "FIELD_OPERATOR";
-  const canManage = role === "PLANT_MANAGER" || role === "SYSTEM_ADMIN";
 
   function load() {
     if (!alertId) return;
@@ -67,12 +60,7 @@ export default function AlertDetailScreen() {
     load();
   }, [alertId]);
 
-  useEffect(() => {
-    if (!canManage) return;
-    void apiJson<AssignableUser[]>("users/assignable")
-      .then((list) => setAssignableUsers(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [canManage]);
+  const canAck = alert ? canOperatorAckAlert(alert.status) : false;
 
   async function captureAckGeo(): Promise<{ latitude: number; longitude: number } | null> {
     try {
@@ -115,7 +103,6 @@ export default function AlertDetailScreen() {
       });
       setAlert(updated);
       setNotes("");
-      setAssignTo("");
       const au = await apiJson<AuditRow[]>(`alerts/${alertId}/audit`);
       setAudit(Array.isArray(au) ? au : []);
       setError(null);
@@ -131,144 +118,134 @@ export default function AlertDetailScreen() {
 
   return (
     <MobileShell title="Alerta" showBack>
-      <ScrollView contentContainerStyle={styles.content}>
+      <AppScrollView contentContainerStyle={styles.content} trackCollapse={false}>
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {alert ? (
-          <View style={styles.card}>
-            <Text style={styles.severity}>{labelAlertSeverity(alert.severity)}</Text>
-            <Text style={styles.line}>Estado: {labelAlertStatus(alert.status)}</Text>
-            <Text style={styles.line}>
-              {labelSensorType(alert.sensorType)}: {String(alert.triggeredValue ?? "—")}
-            </Text>
-            <Text style={styles.dim}>Nodo: {getNodeLabel(alert.nodeId)}</Text>
+          <>
+            <View style={styles.meta}>
+              <StatusLabel label={labelAlertSeverity(alert.severity)} tone="accent" />
+              <Text style={styles.dot}>·</Text>
+              <StatusLabel label={labelAlertStatus(alert.status)} />
+            </View>
 
-            <View style={styles.divider} />
-            <Text style={styles.label}>Notas (opcional)</Text>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={3}
-              style={styles.input}
-              placeholderTextColor={colors.dim}
-            />
-            <PrimaryButton
-              title="Reconocer alerta"
-              loading={busy}
-              onPress={async () => {
-                setBusy(true);
-                try {
-                  const geo = await captureAckGeo();
-                  await sendPatch({
-                    action: "ACKNOWLEDGE",
-                    notes: notes.trim() || undefined,
-                    ...(geo ?? {}),
-                  });
-                } finally {
-                  setBusy(false);
+            <DetailPanel>
+              <DetailRow label="ID" value={formatShortId(alert.id)} mono />
+              {alert.ruleId ? (
+                <DetailRow label="Regla" value={formatShortId(alert.ruleId)} mono />
+              ) : null}
+              <DetailRow
+                label="Lectura"
+                value={`${labelSensorType(alert.sensorType)}: ${String(alert.triggeredValue ?? "—")}`}
+              />
+              <DetailRow label="Nodo" value={getNodeLabel(alert.nodeId)} />
+              {alert.acknowledgedAt ? (
+                <DetailRow label="Reconocida" value={formatWhen(alert.acknowledgedAt)} />
+              ) : null}
+              {alert.assignedTo ? (
+                <DetailRow label="Asignada a" value={formatShortId(alert.assignedTo)} mono />
+              ) : null}
+              {alert.closedAt ? (
+                <DetailRow label="Cerrada" value={formatWhen(alert.closedAt)} />
+              ) : null}
+              {alert.resolutionNotes ? (
+                <DetailRow label="Resolución" value={alert.resolutionNotes} />
+              ) : null}
+            </DetailPanel>
+
+            {alert.nodeId ? (
+              <PrimaryButton
+                title="Ver sensor"
+                variant="secondary"
+                onPress={() =>
+                  alert.nodeId &&
+                  router.push({
+                    pathname: "/(main)/sensors/[nodeId]",
+                    params: { nodeId: alert.nodeId },
+                  })
                 }
-              }}
-            />
+              />
+            ) : null}
 
-            {canManage ? (
-              <View style={styles.manage}>
-                <Text style={styles.label}>Asignar a</Text>
-                {assignableUsers.map((u) => (
-                  <PrimaryButton
-                    key={u.id}
-                    title={labelAssignableUser(u)}
-                    variant={assignTo === u.id ? "primary" : "secondary"}
-                    onPress={() => setAssignTo(u.id)}
-                  />
-                ))}
-                <PrimaryButton
-                  title="Asignar"
-                  variant="secondary"
-                  loading={busy}
-                  onPress={() => {
-                    if (!assignTo) {
-                      setError("Seleccione un responsable");
-                      return;
-                    }
-                    setBusy(true);
-                    void sendPatch({
-                      action: "COMPLETE",
-                      assignedTo: assignTo,
-                      notes: notes.trim() || undefined,
-                    }).finally(() => setBusy(false));
-                  }}
+            {canAck ? (
+              <View style={styles.block}>
+                <SectionHeader title="Confirmar recepción" />
+                <Text style={styles.label}>Notas (opcional)</Text>
+                <TextInput
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={3}
+                  style={styles.input}
+                  placeholderTextColor={colors.dim}
                 />
                 <PrimaryButton
-                  title="Cerrar alerta"
-                  variant="danger"
+                  title="Reconocer alerta"
                   loading={busy}
-                  onPress={() => {
+                  onPress={async () => {
                     setBusy(true);
-                    void sendPatch({
-                      action: "CLOSE",
-                      notes: notes.trim() || undefined,
-                    }).finally(() => setBusy(false));
+                    try {
+                      const geo = await captureAckGeo();
+                      await sendPatch({
+                        action: "ACKNOWLEDGE",
+                        notes: notes.trim() || undefined,
+                        ...(geo ?? {}),
+                      });
+                    } finally {
+                      setBusy(false);
+                    }
                   }}
                 />
               </View>
-            ) : null}
-
-            {operatorOnly ? (
-              <Text style={styles.hint}>Operario: solo confirmación (ACK).</Text>
-            ) : null}
-          </View>
+            ) : (
+              <Text style={styles.dim}>
+                Esta alerta ya fue reconocida o cerrada. Solo lectura.
+              </Text>
+            )}
+          </>
         ) : null}
 
-        <Text style={styles.section}>Auditoría</Text>
-        {audit.map((row) => (
-          <Text key={row.id} style={styles.audit}>
-            {row.timestamp} — {labelAuditAction(row.action)} ({row.actorRole ?? "?"})
-          </Text>
-        ))}
+        <SectionHeader title="Historial" />
+        {audit.length === 0 ? (
+          <Text style={styles.dim}>Sin eventos de auditoría.</Text>
+        ) : (
+          audit.map((row) => (
+            <View key={row.id} style={styles.auditRow}>
+              <Text style={styles.audit}>
+                {formatWhen(row.timestamp)} — {labelAuditAction(row.action)} (
+                {row.actorRole ?? "?"})
+              </Text>
+              {row.notes ? <Text style={styles.auditNotes}>{row.notes}</Text> : null}
+            </View>
+          ))
+        )}
 
-        <PrimaryButton
-          title="Volver a alertas"
-          variant="secondary"
-          onPress={() => router.back()}
-        />
-      </ScrollView>
+        <PrimaryButton title="Volver" variant="secondary" onPress={() => router.back()} />
+      </AppScrollView>
     </MobileShell>
   );
 }
 
-const styles = StyleSheet.create({
-  content: { gap: spacing.md, paddingBottom: spacing.xl },
-  error: { color: colors.warning, fontSize: 14 },
-  card: {
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  severity: { color: colors.accent, fontSize: 20, fontWeight: "700" },
-  line: { color: colors.muted, fontSize: 14 },
-  dim: { color: colors.dim, fontSize: 12 },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.sm,
-  },
-  label: { color: colors.muted, fontSize: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    backgroundColor: colors.bg,
-    color: colors.text,
-    padding: spacing.sm,
-    minHeight: 72,
-    textAlignVertical: "top",
-  },
-  manage: { gap: spacing.sm, marginTop: spacing.sm },
-  hint: { color: colors.dim, fontSize: 12 },
-  section: { color: colors.text, fontWeight: "600", fontSize: 16 },
-  audit: { color: colors.dim, fontSize: 12 },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    content: { gap: spacing.sm, paddingBottom: spacing.xl, paddingTop: spacing.sm },
+    error: { color: colors.danger, fontSize: 14 },
+    block: { gap: spacing.sm },
+    meta: { flexDirection: "row", alignItems: "center", gap: 6 },
+    dot: { color: colors.dim },
+    label: { color: colors.muted, fontSize: 13 },
+    input: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      color: colors.text,
+      paddingVertical: spacing.sm,
+      minHeight: 72,
+      textAlignVertical: "top",
+      fontSize: 15,
+    },
+    dim: { color: colors.dim, fontSize: 13 },
+    auditRow: { marginBottom: spacing.sm },
+    audit: { color: colors.dim, fontSize: 12 },
+    auditNotes: { color: colors.muted, fontSize: 12, marginTop: 2, paddingLeft: spacing.sm },
+  });
+}
