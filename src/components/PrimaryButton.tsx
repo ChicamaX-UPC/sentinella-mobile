@@ -1,15 +1,18 @@
+import { useMemo, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
-  ViewStyle,
-  type PressableProps,
+  View,
+  type ViewStyle,
 } from "react-native";
 
-import { colors, radii, spacing } from "../theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { fonts } from "@/theme/typography";
+import { spacing } from "@/theme/tokens";
 
-type Props = Omit<PressableProps, "style"> & {
+type Props = Omit<ComponentProps<typeof Pressable>, "style"> & {
   title: string;
   loading?: boolean;
   variant?: "primary" | "secondary" | "danger";
@@ -24,59 +27,66 @@ export function PrimaryButton({
   style,
   ...rest
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const textColor =
+    variant === "primary"
+      ? colors.accentOn
+      : variant === "danger"
+        ? colors.danger
+        : colors.text;
+
   return (
     <Pressable
-      style={[
+      style={({ pressed }) => [
         styles.btn,
         variant === "primary" && styles.primary,
         variant === "secondary" && styles.secondary,
         variant === "danger" && styles.danger,
         (disabled || loading) && styles.disabled,
+        pressed && !disabled && !loading && { opacity: 0.8 },
         style,
       ]}
       disabled={disabled || loading}
       {...rest}
     >
       {loading ? (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={textColor} />
       ) : (
-        <Text style={styles.text}>{title}</Text>
+        <Text style={[styles.text, { color: textColor }]}>{title}</Text>
       )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  btn: {
-    minHeight: 48,
-    borderRadius: radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-  },
-  primary: {
-    backgroundColor: colors.accent,
-  },
-  secondary: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  danger: {
-    backgroundColor: colors.dangerSoft,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  pressed: {
-    opacity: 0.9,
-  },
-  text: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    btn: {
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    primary: {
+      backgroundColor: colors.accent,
+    },
+    secondary: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    danger: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.danger,
+    },
+    disabled: {
+      opacity: 0.45,
+    },
+    text: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 15,
+    },
+  });
+}

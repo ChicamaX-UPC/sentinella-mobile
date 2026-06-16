@@ -1,5 +1,5 @@
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,12 +12,17 @@ import {
 } from "react-native";
 
 import { useSession } from "@/auth/SessionContext";
+import { canUseMobileApp } from "@/auth/roles";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { API_BASE_URL } from "@/config/api";
-import { colors, radii, spacing } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { radii, spacing } from "@/theme/tokens";
 
 export default function LoginScreen() {
   const { user, loading, login } = useSession();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [email, setEmail] = useState("campo@sentinella.demo");
   const [password, setPassword] = useState("Sentinella2024!");
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +37,7 @@ export default function LoginScreen() {
   }
 
   if (user) {
-    return <Redirect href="/(main)" />;
+    return <Redirect href={canUseMobileApp(user.role) ? "/(main)" : "/unauthorized"} />;
   }
 
   async function onSubmit() {
@@ -53,11 +58,18 @@ export default function LoginScreen() {
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.logo}>Sentinella Campo</Text>
-        <Text style={styles.subtitle}>Operaciones en relavera</Text>
+      <View style={styles.topBar}>
+        <ThemeToggleButton />
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.logo}>Sentinella</Text>
+        <Text style={styles.subtitle}>Operario de campo</Text>
 
-        <View style={styles.card}>
+        <View style={styles.form}>
           <Text style={styles.label}>Correo</Text>
           <TextInput
             value={email}
@@ -85,62 +97,59 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.bg,
-  },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  logo: {
-    color: colors.accent,
-    fontSize: 28,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  subtitle: {
-    color: colors.muted,
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  card: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  label: {
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: spacing.sm,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    backgroundColor: colors.bg,
-    color: colors.text,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-    fontSize: 16,
-  },
-  error: {
-    color: colors.warning,
-    fontSize: 14,
-    marginTop: spacing.sm,
-  },
-  hint: {
-    color: colors.dim,
-    fontSize: 11,
-    textAlign: "center",
-  },
-});
+function createStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.bg,
+    },
+    topBar: {
+      position: "absolute",
+      top: spacing.lg,
+      right: spacing.lg,
+      zIndex: 2,
+    },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: "center",
+      padding: spacing.lg,
+      gap: spacing.lg,
+    },
+    logo: {
+      color: colors.text,
+      fontSize: 26,
+      fontWeight: "600",
+    },
+    subtitle: {
+      color: colors.muted,
+      fontSize: 14,
+      marginTop: -spacing.sm,
+    },
+    form: { gap: spacing.sm, marginTop: spacing.md },
+    label: {
+      color: colors.muted,
+      fontSize: 13,
+      marginTop: spacing.sm,
+    },
+    input: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      color: colors.text,
+      paddingVertical: spacing.sm + 2,
+      fontSize: 16,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 14,
+      marginTop: spacing.sm,
+    },
+    hint: {
+      color: colors.dim,
+      fontSize: 11,
+      marginTop: spacing.md,
+    },
+  });
+}
