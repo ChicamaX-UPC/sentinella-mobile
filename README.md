@@ -2,6 +2,8 @@
 
 App nativa para **operarios de campo** (`FIELD_OPERATOR`): login JWT, KPIs, alertas con ACK+GPS, rondas con checklist, sensores simulados, fotos/GPS y cola offline.
 
+**Expo SDK 54** — compatible con **Expo Go de la App Store** (iOS/Android).
+
 Cubre **US13** (alertas en foreground), **US14** (rondas de inspección) y la navegación del **Cap. VI** del informe académico ChicamaX.
 
 **IoT físico no está incluido**: la telemetría y las alertas provienen del **seed demo** del backend Docker (`MonitoringDemoDataSeeder`, etc.). La app consume la misma API que la PWA `/mobile/*` en `sentinella-frontend`.
@@ -31,7 +33,11 @@ copy .env.example .env
 npm start
 ```
 
-Escanea el QR con **Expo Go** (Android/iOS).
+Escanea el QR con **Expo Go** (iOS/Android). Tras cambiar de SDK, reinicia con caché limpia:
+
+```powershell
+npx expo start -c
+```
 
 | Entorno | `EXPO_PUBLIC_API_BASE_URL` |
 |---------|----------------------------|

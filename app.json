@@ -24,7 +24,6 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -34,6 +33,14 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -53,7 +60,8 @@
         {
           "cameraPermission": "Sentinella captura fotos de inspección en borrador local."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {
